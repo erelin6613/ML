@@ -28,63 +28,71 @@ def plots(ims, figsize=(12,6), rows=1, interp=False, titles=None):
         plt.show()
         print('plots should have been run')
 
-
-pics_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/'
+train_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/train'
+test_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/test'
+valid_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/valid'
 
 categories = ['bus', 'traffic_lights', 'crosswalks', 'bicycles',
         'fire_hydrant', 'cars', 'chimneys', 'stairs', 'bridges']
 
-labeled_data = {}
-
-for cat in categories:
-  pics = []
-  path = pics_path+cat
-#  label = cat
-  for root, dirs, files in os.walk(path):
-    for name in files:
-      pics.append(load_img(os.path.join(root, name)))
-  labeled_data[cat] = pics
-
-print(labeled_data)
-
-#test_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3'
-
-batch_size = 4
+#(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+#y_train = np_utils.to_categorical(y_train, num_classes)
+#y_test = np_utils.to_categorical(y_test, num_classes)
 
 #X_train, X_test, y_train, y_test = train_test_split(images, labels)
 
 model = Sequential()
-#model.add(Conv2D(32, (3, 3)))
-#model.add(Activation('relu'))
-#model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Conv2D(32, input_shape=(130, 130, 3), kernel_size=(3, 3)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
 
-#model.add(Conv2D(32, (3, 3)))
-#model.add(Activation('relu'))
-#model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Conv2D(32, kernel_size=(2, 2)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
 
-#model.add(Conv2D(64, (3, 3)))
-#model.add(Activation('relu'))
-#model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Conv2D(64, kernel_size=(2, 2)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
 
-#model.add(Flatten())
-#model.add(Dense(64))
-#model.add(Dropout(0.5))
-#model.add(Dense(len(categories)))
-#model.add(Activation('sigmoid'))
+model.add(Flatten())
+model.add(Dense(64))
+model.add(Dropout(0.5))
+model.add(Activation('sigmoid'))
 
-#print(VGG16().summary())
-#vgg16_model = VGG16()
 
-#for layer in vgg16_model.layers:
-  #print(layer)
-#  model.add(layer)
-
-#model.layers.pop()
-model.add(Dense(len(categories), activation='softmax'))
+model.add(Dense(10, activation='softmax'))
 model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-model.fit_generator(pics_generator, steps_per_epoch=4, epochs=6, verbose=1, validation_data=(X_test, y_test))
 
-print(model.summary())
+train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+        train_path,
+        target_size=(130, 130),
+        batch_size=16,
+        class_mode='categorical')
+
+validation_generator = test_datagen.flow_from_directory(
+        valid_path,
+        target_size=(130, 130),
+        batch_size=16,
+        class_mode='categorical')
+
+model.fit_generator(
+        train_generator,
+        steps_per_epoch=10,
+        epochs=50,
+        validation_data=validation_generator,
+        validation_steps=25)
+
+
+
+#print(model.summary())
 
 
 
