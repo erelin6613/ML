@@ -9,8 +9,12 @@ from keras.models import Sequential
 from keras.layers import Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
+from keras.models import load_model
+import os
 
+#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+#model = load_model('cnn_recaptcha.h5')
 
 def plots(ims, figsize=(12,6), rows=1, interp=False, titles=None):
     if type(ims[0]) is np.ndarray:
@@ -85,13 +89,24 @@ validation_generator = test_datagen.flow_from_directory(
 
 model.fit_generator(
         train_generator,
-        steps_per_epoch=10,
-        epochs=50,
+        steps_per_epoch=20,
+        epochs=100,
         validation_data=validation_generator,
-        validation_steps=25)
+        validation_steps=20)
 
 
+pics = []
+pic = load_img('./pic_2_23.jpg', target_size=(130, 130, 3), color_mode='rgb')
+pic = img_to_array(pic)
+pic = pic.reshape((-1, 130, 130, 3))
+pics.append(pic)
+y_prob = model.predict_classes(pics) 
+#y_classes = y_prob.argmax(axis=-1)
+print(y_prob)
 
+
+#model.save_weights('cnn_recaptcha_weights.h5')
+#model.save('cnn_recaptcha.h5')
 #print(model.summary())
 
 
