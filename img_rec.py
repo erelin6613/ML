@@ -3,6 +3,7 @@ import time
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.preprocessing import OneHotEncoder
 from keras.preprocessing.image import load_img, ImageDataGenerator, img_to_array, array_to_img
 from keras.applications.vgg16 import preprocess_input, VGG16
 from keras.models import Sequential
@@ -11,6 +12,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from keras.models import load_model
 import os
+import cv2
 
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -32,12 +34,49 @@ def plots(ims, figsize=(12,6), rows=1, interp=False, titles=None):
         plt.show()
         print('plots should have been run')
 
+
+def create_data(path):
+
+  data = []
+  labels = []
+
+  X = [['Male', 1], ['Female', 3], ['Female', 2]]
+
+  #labels = 
+
+  for folder in os.listdir(path):
+    for pic in os.listdir(os.path.join(path,folder)):
+      label = str(folder)
+      img = os.path.join(os.path.join(path,folder), pic)
+      img = cv2.imread(img)
+      data.append([np.array(img), label])
+      #labels.append(label)
+
+  return data
+
+
 train_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/train'
 test_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/test'
-valid_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/valid'
+#valid_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/valid'
 
-categories = ['bus', 'traffic_lights', 'crosswalks', 'bicycles',
-        'fire_hydrant', 'cars', 'chimneys', 'stairs', 'bridges']
+train_data = [row[0] for row in create_data(train_path)]
+train_labels = [row[1] for row in create_data(train_path)]
+test_data = [row[0] for row in create_data(test_path)]
+test_labels = [row[1] for row in create_data(test_path)]
+
+#train_data, train_labels = create_data(train_path)
+#test_data, test_labels = create_data(test_path)
+
+#print(train_data[0].shape, '\n', train_labels[0].shape, '\n',test_data[0].shape, '\n',test_labels[0].shape, '\n')
+
+enc = OneHotEncoder()
+enc.fit(create_data(train_path))
+
+#print(train_labels)
+#print()
+
+#categories = ['bus', 'traffic_lights', 'crosswalks', 'bicycles',
+#        'fire_hydrant', 'cars', 'chimneys', 'stairs', 'bridges']
 
 #(x_train, y_train), (x_test, y_test) = cifar10.load_data()
 #y_train = np_utils.to_categorical(y_train, num_classes)
@@ -65,44 +104,22 @@ model.add(Activation('sigmoid'))
 
 
 model.add(Dense(10, activation='softmax'))
+#model.add(Flatten())
 model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-train_datagen = ImageDataGenerator(
-        rescale=1./255,
-        shear_range=0.2,
-        zoom_range=0.2,
-        horizontal_flip=True)
+model.fit(train_data, train_labels, steps_per_epoch=10, epochs=100, validation_split=0.2, validation_steps=20)
 
-test_datagen = ImageDataGenerator(rescale=1./255)
-
-train_generator = train_datagen.flow_from_directory(
-        train_path,
-        target_size=(130, 130),
-        batch_size=16,
-        class_mode='categorical')
-
-validation_generator = test_datagen.flow_from_directory(
-        valid_path,
-        target_size=(130, 130),
-        batch_size=16,
-        class_mode='categorical')
-
-model.fit_generator(
-        train_generator,
-        steps_per_epoch=20,
-        epochs=100,
-        validation_data=validation_generator,
-        validation_steps=20)
+model.evaluate(test_data, test_labels)
 
 
-pics = []
+"""pics = []
 pic = load_img('./pic_2_23.jpg', target_size=(130, 130, 3), color_mode='rgb')
 pic = img_to_array(pic)
 pic = pic.reshape((-1, 130, 130, 3))
 pics.append(pic)
 y_prob = model.predict_classes(pics) 
 #y_classes = y_prob.argmax(axis=-1)
-print(y_prob)
+print(y_prob)"""
 
 
 #model.save_weights('cnn_recaptcha_weights.h5')
