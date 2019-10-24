@@ -1,22 +1,52 @@
+#!/usr/bin/env python3
+
+"""
+Developed by Valentyna Fihurska
+
+The CNN model developed to categorize images collected from
+Google Recaptcha service and hence trained with images used
+by this service. Currently model`s accuracy is poor. Several
+problems could be addressed to improve the model:
+
+Ones I have no or little control over:
+1. Google Recaptcha service purposely uses blurry images as
+mean of protection from robots
+2. Hardware; current hardware does not allow to use GPU and
+CPU usage is limited also (16 units per layer overwhealms
+PC to use all of the resources available)
+
+Ones I can fix or improve:
+1. Use skimage module to make images less blury/add contrast/ect
+2. Exclude ambigous images (i.e. containging two categories at once)
+
+Last update: 21-Oct-2019
+"""
+
 import os
 import time
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from keras.preprocessing.image import load_img, ImageDataGenerator, img_to_array, array_to_img
 from keras.applications.vgg16 import preprocess_input, VGG16
 from keras.models import Sequential
 from keras.layers import Conv2D, MaxPooling2D, Activation, Dropout, Flatten, Dense
+from keras.utils import to_categorical, normalize
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from keras.models import load_model
 import os
 import cv2
+import tensorflow as tf
 
+"""config = tf.ConfigProto(
+        device_count = {'GPU': 0}
+    )
+sess = tf.Session(config=config)"""
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-#model = load_model('cnn_recaptcha.h5')
+#model = load_model('new_model.h5')
 
 def plots(ims, figsize=(12,6), rows=1, interp=False, titles=None):
     if type(ims[0]) is np.ndarray:
@@ -40,10 +70,6 @@ def create_data(path):
   data = []
   labels = []
 
-  X = [['Male', 1], ['Female', 3], ['Female', 2]]
-
-  #labels = 
-
   for folder in os.listdir(path):
     for pic in os.listdir(os.path.join(path,folder)):
       label = str(folder)
@@ -57,138 +83,87 @@ def create_data(path):
 
 train_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/train'
 test_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/test'
+
+#train_path = '/home/val/coding/intel_img/seg_train'
+#test_path = '/home/val/coding/intel_img/seg_test'
 #valid_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/valid'
 
 train_data = [row[0] for row in create_data(train_path)]
-train_labels = [row[1] for row in create_data(train_path)]
-test_data = [row[0] for row in create_data(test_path)]
-test_labels = [row[1] for row in create_data(test_path)]
+train_data = np.asarray(train_data)
+train_data = normalize(train_data)
 
+train_labels = np.asarray([row[1] for row in create_data(train_path)])
+train_labels = np.asarray(train_labels)
+#train_labels = to_categorical(train_labels)
+
+test_data = [row[0] for row in create_data(test_path)]
+test_data = np.asarray(test_data)
+test_data = normalize(test_data)
+
+test_labels = np.asarray([row[1] for row in create_data(test_path)])
+test_labels = np.asarray(test_labels)
+#test_labels = to_categorical(test_labels)
+#test_labels = np.asarray(test_labels)
+
+print(train_labels)
 #train_data, train_labels = create_data(train_path)
 #test_data, test_labels = create_data(test_path)
 
-#print(train_data[0].shape, '\n', train_labels[0].shape, '\n',test_data[0].shape, '\n',test_labels[0].shape, '\n')
 
-enc = OneHotEncoder()
-enc.fit(create_data(train_path))
+label_encoder = LabelEncoder()
+int_train_labels = label_encoder.fit_transform(train_labels)
+#one_hot_enc = OneHotEncoder()
+int_train_labels = to_categorical(int_train_labels)
+#one_hot_train_enc = one_hot_train_enc.todense()
+int_test_labels = label_encoder.fit_transform(test_labels)
+int_test_labels = to_categorical(int_test_labels)
+#one_hot_enc = OneHotEncoder()
+#one_hot_test_enc = one_hot_enc.fit(int_test_labels.reshape(len(int_test_labels), 1))
+#one_hot_test_enc = one_hot_test_enc.todense()
 
-#print(train_labels)
-#print()
-
-#categories = ['bus', 'traffic_lights', 'crosswalks', 'bicycles',
-#        'fire_hydrant', 'cars', 'chimneys', 'stairs', 'bridges']
-
-#(x_train, y_train), (x_test, y_test) = cifar10.load_data()
-#y_train = np_utils.to_categorical(y_train, num_classes)
-#y_test = np_utils.to_categorical(y_test, num_classes)
-
-#X_train, X_test, y_train, y_test = train_test_split(images, labels)
+print(int_train_labels)
 
 model = Sequential()
-model.add(Conv2D(32, input_shape=(130, 130, 3), kernel_size=(3, 3)))
+model.add(Conv2D(8, input_shape=(130, 130, 3), kernel_size=(3, 3)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(32, kernel_size=(2, 2)))
+model.add(Conv2D(8, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(64, kernel_size=(2, 2)))
+model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(16, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
 model.add(Flatten())
-model.add(Dense(64))
+model.add(Dense(16))
 model.add(Dropout(0.5))
 model.add(Activation('sigmoid'))
 
-
-model.add(Dense(10, activation='softmax'))
 #model.add(Flatten())
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.add(Dense(10, activation=tf.nn.softmax))
+#model.add(Flatten())
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-model.fit(train_data, train_labels, steps_per_epoch=10, epochs=100, validation_split=0.2, validation_steps=20)
+model.fit(train_data, int_train_labels, steps_per_epoch=50, epochs=50, validation_split=0.2, validation_steps=20)
 
-model.evaluate(test_data, test_labels)
+print(model.metrics_names)
+print(model.evaluate(test_data, int_test_labels))
 
-
-"""pics = []
-pic = load_img('./pic_2_23.jpg', target_size=(130, 130, 3), color_mode='rgb')
-pic = img_to_array(pic)
-pic = pic.reshape((-1, 130, 130, 3))
-pics.append(pic)
-y_prob = model.predict_classes(pics) 
-#y_classes = y_prob.argmax(axis=-1)
-print(y_prob)"""
-
-
-#model.save_weights('cnn_recaptcha_weights.h5')
-#model.save('cnn_recaptcha.h5')
-#print(model.summary())
-
-
-
-
-#conf_mat = confusion_matrix(test_labels, predected_labels)
-
-"""
-batch_size = 16
-train_datagen = ImageDataGenerator(rotation_range=0, width_shift_range=0.25,
-									height_shift_range=0.25, rescale=1./255, 
-									shear_range=0.2, zoom_range=0.15, 
-									horizontal_flip=True, fill_mode='nearest')
-#for root, dirs, files in os.walk(path):
-#   for name in files:
-#   	image = load_img(os.path.join(root, name))
-#   	x = img_to_array(image)
-#   	x = x.reshape((1,)+x.shape)
-#   	model.predict(x)
-
-test_datagen = ImageDataGenerator(rescale=1./255)
-
-train_generator = train_datagen.flow_from_directory(path+'/train', target_size=(131, 131), 
-														batch_size=batch_size, class_mode='binary')
-
-validation_generator = test_datagen.flow_from_directory(path+'/validation', target_size=(131, 131),
-															batch_size=batch_size, class_mode='binary')
-
-model.fit_generator(train_generator, steps_per_epoch=2000//batch_size, epochs=50,
-					validation_data=validation_generator, validation_steps=800//batch_size)
-
-model.save_weights('model_recaptcha.h5')
-
-j=0
-
-#mini_pic_sizes = [(0, 0, 131, 131), (0, 131, 131, 262), (0, 262, 131, 392),
-#					(131, 0, 262, 131), (131, 131, 262, 262), (131, 262, 262, 392),
-#					(262, 0, 392, 131), (262, 131, 392, 262), (262, 262, 392, 392)]
-
-categories = ['bus', 'traffic lights', 'crosswalks', 'bicycles',
-				'a fire hydrant', 'cars', 'chimneys',
-				'parking meters', 'palm trees', 'stairs', 'bridges']
-
-#for root, dirs, files in os.walk(path):
-#   for name in files:
-#   	image = load_img(os.path.join(root, name))
-#   	x = img_to_array(image)
-#   	x = x.reshape((1,)+x.shape)
-#   	model.predict(x)
-   	#print(x.shape)
-   	#i=0
-   	#for batch in datagen.flow(x, batch_size=1, save_to_dir=path, save_prefix='pic', save_format='jpg'):
-   	#	i += 1
-   	#	if i > 5:
-   	#		break
-   	
-
-   	#img = Image.open(os.path.join(root, name))
-   	#new_image = img.crop((538, 235, 930, 627))
-   	#for i in range(9):
-   	#	fin_img = new_image.crop(mini_pic_sizes[i])
-   	#	fin_img.save('/home/val/google_recaptcha_set/recaptcha_set/3x3/pic_{}.jpg'.format(j))
-   		#fin_img.show()
-   	#	j += 1
-   		#time.sleep(15)"""
+model.save('cnn_model_v1.h5')
 
 
 
