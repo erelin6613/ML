@@ -81,8 +81,8 @@ def create_data(path):
   return data
 
 
-train_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/train'
-test_path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/test'
+train_path = './recaptcha_set/3x3/train'
+test_path = './recaptcha_set/3x3/test'
 
 #train_path = '/home/val/coding/intel_img/seg_train'
 #test_path = '/home/val/coding/intel_img/seg_test'
@@ -124,32 +124,32 @@ int_test_labels = to_categorical(int_test_labels)
 print(int_train_labels)
 
 model = Sequential()
-model.add(Conv2D(8, input_shape=(130, 130, 3), kernel_size=(3, 3)))
+model.add(Conv2D(32, input_shape=(130, 130, 3), kernel_size=(3, 3)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(8, kernel_size=(2, 2)))
+model.add(Conv2D(32, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Conv2D(32, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Conv2D(32, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Conv2D(64, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
-model.add(Conv2D(16, kernel_size=(2, 2)))
+model.add(Conv2D(64, kernel_size=(2, 2)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 
 model.add(Flatten())
-model.add(Dense(16))
+model.add(Dense(64))
 model.add(Dropout(0.5))
 model.add(Activation('sigmoid'))
 
@@ -163,8 +163,4 @@ model.fit(train_data, int_train_labels, steps_per_epoch=50, epochs=50, validatio
 print(model.metrics_names)
 print(model.evaluate(test_data, int_test_labels))
 
-model.save('cnn_model_v1.h5')
-
-
-
-
+model.save('cnn_model_v3.h5')
