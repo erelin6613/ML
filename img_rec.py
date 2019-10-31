@@ -90,7 +90,7 @@ test_path = './recaptcha_set/3x3/test'
 
 train_data = [row[0] for row in create_data(train_path)]
 train_data = np.asarray(train_data)
-train_data = normalize(train_data)
+#train_data = normalize(train_data)
 
 train_labels = np.asarray([row[1] for row in create_data(train_path)])
 train_labels = np.asarray(train_labels)
@@ -98,7 +98,7 @@ train_labels = np.asarray(train_labels)
 
 test_data = [row[0] for row in create_data(test_path)]
 test_data = np.asarray(test_data)
-test_data = normalize(test_data)
+#test_data = normalize(test_data)
 
 test_labels = np.asarray([row[1] for row in create_data(test_path)])
 test_labels = np.asarray(test_labels)
@@ -158,9 +158,9 @@ model.add(Dense(10, activation=tf.nn.softmax))
 #model.add(Flatten())
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-model.fit(train_data, int_train_labels, steps_per_epoch=50, epochs=50, validation_split=0.2, validation_steps=20)
+model.fit(train_data, int_train_labels, steps_per_epoch=50, epochs=50, validation_split=0.25, validation_steps=20)
 
 print(model.metrics_names)
 print(model.evaluate(test_data, int_test_labels))
 
-model.save('cnn_model_v3.h5')
+model.save('cnn_model_v5_no_normalization.h5')
