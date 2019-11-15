@@ -4,6 +4,8 @@
 
 Developed by Valentyna Fihurska https://github.com/erelin6613
 
+Recaptcha_slasher_v1.1.2
+
 Deployment of CNN trained to classify Google Recaptcha images.
 The pipeline set not to just solve Recaptcha but to collect
 images further. The accuracy of the model could be
@@ -16,7 +18,14 @@ to extend model to classify more categories, while training
 images are collected temporary solution should be
 random clicking (function random_solver)
 
-Last update: 07-Nov-2019
+As the algorythm does not perform good enough another
+idea is to overwrite the model not just to recognize but
+to detect and recognize objects as big reason of not
+all that successful performance is categorical
+classification despite pictures having several objects.
+
+
+Last update: 15-Nov-2019
 """
 
 import requests
@@ -79,33 +88,34 @@ def recognizing_pics(path, category):
 	model = load_model('cnn_model_v5_no_normalization.h5')
 	clicked = set()
 	i = 0
-	for pic in pics:
-		print(model.predict_classes(pic)[0])
-		if int(category) == int(model.predict_classes(pic)[0]):
-
-			if mini_pic_sizes[i] not in clicked:
-				clicked.add(mini_pic_sizes[i])
-				button = pyautogui.position(x=535 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
-				pyautogui.leftClick(button)
-				sleep(3)
-		if len(clicked) > 5:
-			break
-		i += 1
-	if len(clicked) < 5:
-		i = 0
+	for j in range(3):
 		for pic in pics:
-			if mini_pic_sizes[i] not in clicked:
-				if model.predict_proba(pic)[0][category] > 0.00001:
-					button = pyautogui.position(x=535 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
+			print(model.predict_classes(pic)[0])
+			if int(category) == int(model.predict_classes(pic)[0]):
+
+				if mini_pic_sizes[i] not in clicked:
+					clicked.add(mini_pic_sizes[i])
+					button = pyautogui.position(x=536 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
 					pyautogui.leftClick(button)
 					sleep(3)
-					clicked.add(mini_pic_sizes[i])
 			if len(clicked) > 5:
 				break
+			i += 1
+		if len(clicked) < 5:
+			i = 0
+			for pic in pics:
+				if mini_pic_sizes[i] not in clicked:
+					if model.predict_proba(pic)[0][category] > 0.0001:
+						button = pyautogui.position(x=536 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
+						pyautogui.leftClick(button)
+						sleep(3)
+						clicked.add(mini_pic_sizes[i])
+				if len(clicked) > 5:
+					break
 
-	verify = pyautogui.position(x=870, y=700)
-	pyautogui.leftClick(verify)
-	sleep(2)
+		verify = pyautogui.position(x=870, y=700)
+		pyautogui.leftClick(verify)
+		sleep(2)
 
 
 def recognize_query(path):
@@ -117,7 +127,7 @@ def recognize_query(path):
 	r = requests.post(ocr_api_url, files = {'img': img}, data = {'apikey': ocr_api_key, 'language': 'eng'})
 	query = r.content.decode()
 	for key in class_decode.keys():
-		if key in query.strip():
+		if key in query.strip().lower() or key in query.lower():
 			category = key
 			print(category)
 			requests.post(url=ocr_api_url, data={'apikey': ocr_api_key}, headers={'Connection':'close'})
@@ -127,10 +137,10 @@ def recognize_query(path):
 		recognizing_pics(path, class_decode[category])
 	except Exception as e:
 		print(e)
-		#random_solver()
+		random_solver(path)
 
 
-def random_slover(path):
+def random_solver(path):
 
 	#model = load_model('cnn_model_v5_no_normalization.h5')
 	clicked = set()
@@ -140,7 +150,7 @@ def random_slover(path):
 	for i in range(5):
 		if mini_pic_sizes[i] not in clicked:
 			clicked.add(mini_pic_sizes[i])
-			button = pyautogui.position(x=535 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
+			button = pyautogui.position(x=536 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
 			pyautogui.leftClick(button)
 			sleep(3)
 		if len(clicked) > 5:
@@ -152,12 +162,15 @@ def random_slover(path):
 		for i in range(5):
 			if mini_pic_sizes[i] not in clicked:
 				if model.predict_proba(pic)[0][category] > 0.00001:
-					button = pyautogui.position(x=535 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
+					button = pyautogui.position(x=536 + random.randint(mini_pic_sizes[i][0], mini_pic_sizes[i][2]), y=270 + random.randint(mini_pic_sizes[i][1], mini_pic_sizes[i][3]))
 					pyautogui.leftClick(button)
 					sleep(3)
 					clicked.add(mini_pic_sizes[i])
 			if len(clicked) > 5:
 				break
+	verify = pyautogui.position(x=870, y=700)
+	pyautogui.leftClick(verify)
+	sleep(2)
 
 def recaptcha_slasher(i, driver):
 
