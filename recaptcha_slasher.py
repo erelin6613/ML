@@ -35,13 +35,17 @@ import json
 import pyautogui
 import autopy
 import cv2
-from keras.models import load_model
+#from keras.models import load_model
 import os
 from PIL import Image
 import pickle
 import random
 import matplotlib.pyplot as plt
 import os
+import skimage
+from skimage import data
+from skimage.filters import threshold_multiotsu
+from skimage import io
 #from sets import Set
 
 class_decode = {'traffic light': 9, 'stair': 8, 'palm tree': 7, 'fire hydgrant':6,
@@ -51,6 +55,8 @@ class_decode_ = ['bridge', 'bus', 'bicycle', 'cars', 'chimney', 'crosswalk', 'fi
 
 framed_pics = (538, 262, 930, 654)
 mini_pic_sizes = [(1, 1, 131, 131), (1, 131, 131, 261), (1, 261, 131, 391), (131, 1, 261, 131), (131, 131, 261, 261), (131, 261, 261, 391), (261, 1, 391, 131), (261, 131, 391, 261), (261, 261, 391, 391)]
+
+path = '/home/val/google_recaptcha_set/recaptcha_set/3x3/pic_1573740274.jpg'
 
 def cut_pictures(path):
 
@@ -120,8 +126,9 @@ def recognizing_pics(path, category):
 
 def recognize_query(path):
 
+	file = open('ocr_api_key.txt', 'r')
 	ocr_api_url = 'https://api.ocr.space/parse/image'
-	ocr_api_key = '1a1b08f53788957'
+	ocr_api_key = file.readlines()[0].strip()
 
 	img = open(path, 'rb')
 	r = requests.post(ocr_api_url, files = {'img': img}, data = {'apikey': ocr_api_key, 'language': 'eng'})
@@ -193,3 +200,23 @@ def get_screenshot(path, i):
 	sleep(5)
 	image = autopy.bitmap.capture_screen()
 	image.save(path)
+
+"""def object_detector(path):
+
+	image = cv2.imread(path)
+	print(image)
+
+
+	image_proc = cv2.adaptiveThreshold(cv2.cvtColor(image,cv2.COLOR_BGR2GRAY), 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 61, 1)
+	cv2.imshow('original', image)
+	cv2.imshow('processed', image_proc)
+	key = cv2.waitKey(0)"""
+
+
+
+def object_detector(path):
+	image = io.imread(path)
+	io.imshow(image)
+
+if __name__ == '__main__':
+	object_detector(path)
