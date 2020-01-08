@@ -41,6 +41,7 @@ train_cols = list(train_cols)
 X_train, X_test, y_train, y_test = train_test_split(train_data.loc[:, train_cols], train_data.loc[:, target_cols], test_size=0.25)
 print(y_train.columns)
 y_train = y_train.fillna(0)
+y_train = [[row] for col, row in y_train.iterrows() ]
 print(np.array(y_train).shape)
 text_cols = ['question_title', 'question_body', 'answer']
 tokenizer = Tokenizer()
@@ -54,7 +55,6 @@ for col in text_cols:
 
 X_train_stacked = []
 maxlen = 100
-
 """
 for ind in X_train.index:
 	items = []
@@ -69,8 +69,8 @@ for ind in X_train.index:
 		items.append(np.asarray(item_to_stack))
 		#print(items)
 	X_train_stacked.append(np.stack(items))
-
 """
+
 #print(X_train_stacked[0])
 
 X_train = X_train['question_body_tokenized'].tolist()
@@ -91,16 +91,21 @@ print(np.array(X_train_padded))
 model = Sequential()
 
 
-model.add(Dense(64, activation='relu', input_shape=(maxlen, )))
+model.add(Embedding(128, input_shape=(maxlen, ), output_dim=64))
 
 model.add(Dropout(0.2))
-model.add(Dense(32, activation='relu'))
+model.add(Dense(64, activation='relu'))
 model.add(Dropout(0.15))
 
 model.add(Dense(32, activation='relu'))
+model.add(Dropout(0.1))
+
+model.add(Dense(31, activation='relu'))
 #model.add(SimpleRNN(30))
 model.compile(optimizer='Adam', loss='mean_squared_error')
 model.summary()
 
-model.fit(np.array(X_train_padded), np.array(y_train), batch_size=8)
+model.fit(np.array(X_train_padded), np.array(y_train).reshape(len(y_train), maxlen, 31), batch_size=8)
 model.save('google_data.model')
+
+# (3, 100, 31)
