@@ -1,0 +1,106 @@
+import requests
+import os
+import json
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from keras.preprocessing.text import Tokenizer
+from keras.models import Sequential
+from keras.layers import Dense, LSTM, Dropout, Embedding, Flatten, SimpleRNN, Reshape, Input
+import gensim.downloader as api
+from keras.preprocessing.sequence import pad_sequences
+from keras.utils import to_categorical
+import numpy as np
+from keras.models import Model
+
+train_data = pd.read_csv('train.csv', encoding='utf-8')
+final_test_data = pd.read_csv('test.csv', encoding='utf-8')
+
+def cat_to_numeric(category):
+    if category=='LIFE_ARTS':
+        return 1
+    if category=='CULTURE':
+        return 2
+    if category=='SCIENCE':
+        return 3
+    if category=='STACKOVERFLOW':
+      return 4
+    if category=='TECHNOLOGY':
+      return 5
+
+to_drop_train = ['question_user_page', 'host', 'url', 'answer_user_page', 
+                 'answer_user_name', 'question_user_name', 'question_user_page']
+train_data = train_data.drop(to_drop_train, axis=1)
+train_data['categoty_normalized'] = train_data['category'].apply(cat_to_numeric)
+#print(train_data.columns)
+train_data.drop('category', axis=1, inplace=True)
+train_cols = final_test_data.columns
+target_cols = set(train_data.columns).difference(set(final_test_data.columns))
+train_cols = set(train_data.columns) - target_cols
+target_cols = list(target_cols)
+train_cols = list(train_cols)
+X_train, X_test, y_train, y_test = train_test_split(train_data.loc[:, train_cols], train_data.loc[:, target_cols], test_size=0.25)
+print(y_train.columns)
+y_train = y_train.fillna(0)
+print(np.array(y_train).shape)
+text_cols = ['question_title', 'question_body', 'answer']
+tokenizer = Tokenizer()
+for col in text_cols:
+	tokenizer.fit_on_texts(train_data[col])
+for col in text_cols:
+	X_train[col+'_tokenized'] = tokenizer.texts_to_sequences(X_train[col])
+	X_train.drop([col], inplace=True, axis=1)
+	X_test[col+'_tokenized'] = tokenizer.texts_to_sequences(X_test[col])
+	X_test.drop([col], inplace=True, axis=1)
+
+X_train_stacked = []
+maxlen = 100
+
+"""
+for ind in X_train.index:
+	items = []
+	for col in X_train.drop('qa_id', axis=1).columns:
+		#print(col)
+		if len(X_train.loc[ind, col]) > maxlen:
+			item_to_stack = X_train.loc[ind, col][:maxlen]
+		else:
+			item_to_stack = X_train.loc[ind, col]
+			while len(X_train.loc[ind, col]) < maxlen:
+				item_to_stack.append(0)
+		items.append(np.asarray(item_to_stack))
+		#print(items)
+	X_train_stacked.append(np.stack(items))
+
+"""
+#print(X_train_stacked[0])
+
+X_train = X_train['question_body_tokenized'].tolist()
+X_train_padded = []
+for x in X_train:
+	#print(x)
+	if len(x) < maxlen:
+		elem = x
+		while len(elem) < maxlen:
+			elem.append(0)
+	else:
+		elem = x[0:maxlen]
+	#print(len(elem))
+	X_train_padded.append(elem)
+#X_train_padded = [np.array(x) for x in X_train]
+print(np.array(X_train_padded))
+
+model = Sequential()
+
+
+model.add(Dense(64, activation='relu', input_shape=(maxlen, )))
+
+model.add(Dropout(0.2))
+model.add(Dense(32, activation='relu'))
+model.add(Dropout(0.15))
+
+model.add(Dense(32, activation='relu'))
+#model.add(SimpleRNN(30))
+model.compile(optimizer='Adam', loss='mean_squared_error')
+model.summary()
+
+model.fit(np.array(X_train_padded), np.array(y_train), batch_size=8)
+model.save('google_data.model')
