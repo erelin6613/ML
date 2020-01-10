@@ -11,6 +11,7 @@ from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
 import numpy as np
 from keras.models import Model
+from keras.models import load_model
 
 train_data = pd.read_csv('train.csv', encoding='utf-8')
 final_test_data = pd.read_csv('test.csv', encoding='utf-8')
@@ -27,71 +28,122 @@ def cat_to_numeric(category):
     if category=='TECHNOLOGY':
       return 5
 
-to_drop_train = ['question_user_page', 'host', 'url', 'answer_user_page', 
-                 'answer_user_name', 'question_user_name', 'question_user_page']
-train_data = train_data.drop(to_drop_train, axis=1)
-train_data['categoty_normalized'] = train_data['category'].apply(cat_to_numeric)
-#print(train_data.columns)
-train_data.drop('category', axis=1, inplace=True)
-train_cols = final_test_data.columns
-target_cols = set(train_data.columns).difference(set(final_test_data.columns))
-train_cols = set(train_data.columns) - target_cols
-target_cols = list(target_cols)
-train_cols = list(train_cols)
-X_train, X_test, y_train, y_test = train_test_split(train_data.loc[:, train_cols], train_data.loc[:, target_cols], test_size=0.25)
-print(y_train.columns)
-y_train = y_train.fillna(0)
-y_train = [[row] for col, row in y_train.iterrows() ]
-print(np.array(y_train).shape)
-text_cols = ['question_title', 'question_body', 'answer']
-tokenizer = Tokenizer()
-for col in text_cols:
-	tokenizer.fit_on_texts(train_data[col])
-for col in text_cols:
-	X_train[col+'_tokenized'] = tokenizer.texts_to_sequences(X_train[col])
-	X_train.drop([col], inplace=True, axis=1)
-	X_test[col+'_tokenized'] = tokenizer.texts_to_sequences(X_test[col])
-	X_test.drop([col], inplace=True, axis=1)
+def prepare_data(frame):
 
-X_train_stacked = []
-maxlen = 100
+	to_drop = ['question_user_page', 'host', 'url', 'answer_user_page', 
+                 	'answer_user_name', 'question_user_name', 'question_user_page']
+	data = frame.drop(to_drop, axis=1)
+	data['categoty_normalized'] = data['category'].apply(cat_to_numeric)
+	data.drop('category', axis=1, inplace=True)
+	return data
+
+def get_vars_and_targets(train_data, test_data):
+
+	train_cols = test_data.columns
+	target_cols = set(train_data.columns).difference(set(test_data.columns))
+	train_cols = set(train_data.columns) - target_cols
+	target_cols = list(target_cols)
+	train_cols = list(train_cols)
+	return train_cols, target_cols
+
+def transform_texts(frame):
+
+	text_cols = ['question_title', 'question_body', 'answer']
+	tokenizer = Tokenizer()
+	for col in text_cols:
+		tokenizer.fit_on_texts(frame[col])
+	for col in text_cols:
+		frame[col+'_tokenized'] = tokenizer.texts_to_sequences(frame[col])
+		frame.drop([col], inplace=True, axis=1)
+	return frame
+
+def pad_texts(frame, cols, maxlen=500):
+
+	for col in cols:
+		padded = pd.DataFrame()
+		for each in frame[col]:
+			#print(each)
+			#series = pd.Series()
+			
+			if len(each) < maxlen:
+				elem = each
+				while len(elem) < maxlen:
+					elem.append(0)
+				#print(elem)
+			else:
+				elem = each[0:maxlen]
+				#print(elem)
+			padded = padded.append({col+'_padded': elem}, ignore_index=True)
+			#print(padded.tail())
+		frame[col+'_padded'] = padded
+		frame.drop(col, inplace=True, axis=1)
+	return frame
+		#break
+		#pd.concat([frame,])
+		#pd.concat([dat1, dat2], axis=1)
+			
+
+
 """
-for ind in X_train.index:
-	items = []
-	for col in X_train.drop('qa_id', axis=1).columns:
-		#print(col)
-		if len(X_train.loc[ind, col]) > maxlen:
-			item_to_stack = X_train.loc[ind, col][:maxlen]
-		else:
-			item_to_stack = X_train.loc[ind, col]
-			while len(X_train.loc[ind, col]) < maxlen:
-				item_to_stack.append(0)
-		items.append(np.asarray(item_to_stack))
-		#print(items)
-	X_train_stacked.append(np.stack(items))
+		for index in frame.index:
+			padded = []
+			if len(frame.loc[index, col]) < maxlen:
+				elem = frame.loc[index, col]
+				while len(elem) < maxlen:
+					elem.append(0)
+			else:
+				elem = frame.loc[index, col][0:maxlen]
+			frame.loc[index, col+'_padded'] = elem
+		frame.drop([col], inplace=True, axis=1)
+
+	return frame
 """
 
-#print(X_train_stacked[0])
+def build_model(vocab_size):
 
-X_train = X_train['question_body_tokenized'].tolist()
-X_train_padded = []
-for x in X_train:
-	#print(x)
-	if len(x) < maxlen:
-		elem = x
-		while len(elem) < maxlen:
-			elem.append(0)
-	else:
-		elem = x[0:maxlen]
-	#print(len(elem))
-	X_train_padded.append(elem)
-#X_train_padded = [np.array(x) for x in X_train]
-print(np.array(X_train_padded))
+	input_qb = Input(shape=(maxlen, ))
+	emb_qb = Embedding(vocab_size, output_dim=512)(input_qb)
+	lstm_qb = LSTM(512)(emb_qb)
+	dense_qb = Dense(128, activation='relu')(lstm_qb)
+	dropout_qb = Dropout(0.2)(dense_qb)
+	dense2_qb = Dense(64, activation='relu')(dropout_qb)
+	output_qb = Dense(31, activation='relu')(dense2_qb)
 
+	model = Model(inputs=[input_qb], outputs=[output_qb])
+	model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
+
+	return model
+
+
+def main():
+	train_data = pd.read_csv('train.csv', encoding='utf-8')
+	test_data = pd.read_csv('test.csv', encoding='utf-8')
+
+	train_data = prepare_data(train_data)
+	test_data = prepare_data(test_data)
+
+	train_cols, target_cols = get_vars_and_targets(train_data, test_data)
+	X_train, X_test, y_train, y_test = train_test_split(train_data.loc[:, train_cols], train_data.loc[:, target_cols], test_size=0.25)
+	X_train = transform_texts(X_train)
+	X_test = transform_texts(X_test)
+
+	X_train = pad_texts(X_train, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'])
+	print(X_train.dropna())
+
+
+
+
+
+main()
+
+
+
+
+"""
 model = Sequential()
 
 
-model.add(Embedding(128, input_shape=(maxlen, ), output_dim=64))
+model.add(Embedding(64, input_shape=(maxlen, ), output_dim=64))
 
 model.add(Dropout(0.2))
 model.add(Dense(64, activation='relu'))
@@ -105,7 +157,8 @@ model.add(Dense(31, activation='relu'))
 model.compile(optimizer='Adam', loss='mean_squared_error')
 model.summary()
 
-model.fit(np.array(X_train_padded), np.array(y_train).reshape(len(y_train), maxlen, 31), batch_size=8)
+model.fit(np.array(X_train_padded), np.array(y_train), batch_size=8)
 model.save('google_data.model')
 
 # (3, 100, 31)
+"""
