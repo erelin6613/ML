@@ -5,13 +5,15 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from keras.preprocessing.text import Tokenizer
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout, Embedding, Flatten, SimpleRNN, Reshape, Input
+from keras.layers import Dense, LSTM, Dropout, Embedding
+from keras.layers import Flatten, SimpleRNN, Reshape, Input, concatenate
 import gensim.downloader as api
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
 import numpy as np
 from keras.models import Model
 from keras.models import load_model
+import time
 
 train_data = pd.read_csv('train.csv', encoding='utf-8')
 final_test_data = pd.read_csv('test.csv', encoding='utf-8')
@@ -55,10 +57,28 @@ def transform_texts(frame):
 	for col in text_cols:
 		frame[col+'_tokenized'] = tokenizer.texts_to_sequences(frame[col])
 		frame.drop([col], inplace=True, axis=1)
-	return frame
+	return [frame, len(tokenizer.word_index)]
 
-def pad_texts(frame, cols, maxlen=500):
+def pad_texts(frame, cols, maxlen=750):
 
+	frame_padded = pd.DataFrame()
+
+	for index in frame.index:
+		padded_val = {'index': index}
+		for col in cols:
+			if len(frame.loc[index, col]) < maxlen:
+				elem = frame.loc[index, col]
+				while len(elem) < maxlen:
+					elem.append(0)
+			else:
+				elem = frame.loc[index, col][0:maxlen]
+			padded_val[col+'_padded'] = elem
+		frame_padded = frame_padded.append(padded_val, ignore_index=True)
+		#print(frame_padded)
+
+	return frame_padded
+
+"""	
 	for col in cols:
 		padded = pd.DataFrame()
 		for each in frame[col]:
@@ -69,22 +89,22 @@ def pad_texts(frame, cols, maxlen=500):
 				elem = each
 				while len(elem) < maxlen:
 					elem.append(0)
-				#print(elem)
 			else:
 				elem = each[0:maxlen]
-				#print(elem)
-			padded = padded.append({col+'_padded': elem}, ignore_index=True)
-			#print(padded.tail())
+		padded = padded.append({str(col+'_padded'): elem}, ignore_index=True)
+			print(padded.tail())
+			time.sleep(1)
+
 		frame[col+'_padded'] = padded
 		frame.drop(col, inplace=True, axis=1)
-	return frame
+	return padded
+
+
+
 		#break
 		#pd.concat([frame,])
 		#pd.concat([dat1, dat2], axis=1)
-			
-
-
-"""
+		
 		for index in frame.index:
 			padded = []
 			if len(frame.loc[index, col]) < maxlen:
@@ -99,17 +119,28 @@ def pad_texts(frame, cols, maxlen=500):
 	return frame
 """
 
-def build_model(vocab_size):
+def build_model(vocab_size, maxlen=750):
 
-	input_qb = Input(shape=(maxlen, ))
-	emb_qb = Embedding(vocab_size, output_dim=512)(input_qb)
+	input_qt = Input(shape=(maxlen, ), name='question_title_input')
+	emb_qt = Embedding(vocab_size+1, output_dim=512)(input_qt)
+	lstm_qt = LSTM(512)(emb_qt)
+
+	input_qb = Input(shape=(maxlen, ), name='question_body_input')
+	emb_qb = Embedding(vocab_size+1, output_dim=512)(input_qb)
 	lstm_qb = LSTM(512)(emb_qb)
-	dense_qb = Dense(128, activation='relu')(lstm_qb)
-	dropout_qb = Dropout(0.2)(dense_qb)
-	dense2_qb = Dense(64, activation='relu')(dropout_qb)
-	output_qb = Dense(31, activation='relu')(dense2_qb)
 
-	model = Model(inputs=[input_qb], outputs=[output_qb])
+	input_ans = Input(shape=(maxlen, ), name='answer_input')
+	emb_ans = Embedding(vocab_size+1, output_dim=512)(input_ans)
+	lstm_ans = LSTM(512)(emb_ans)
+
+	merged = concatenate([lstm_qt, lstm_qb, lstm_ans])
+
+	dense = Dense(128, activation='relu')(merged)
+	dropout = Dropout(0.2)(dense)
+	dense2 = Dense(64, activation='relu')(dropout)
+	output = Dense(30, activation='relu', name='outputs')(dense2)
+
+	model = Model(inputs=[input_qt, input_qb, input_ans], outputs=[output])
 	model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
 
 	return model
@@ -124,13 +155,25 @@ def main():
 
 	train_cols, target_cols = get_vars_and_targets(train_data, test_data)
 	X_train, X_test, y_train, y_test = train_test_split(train_data.loc[:, train_cols], train_data.loc[:, target_cols], test_size=0.25)
-	X_train = transform_texts(X_train)
-	X_test = transform_texts(X_test)
+	X_train, vocab_size = transform_texts(X_train)
+	X_test, _ = transform_texts(X_test)
 
 	X_train = pad_texts(X_train, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'])
-	print(X_train.dropna())
+	X_test = pad_texts(X_test, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'])
+	print(y_train.columns)
+	print(len(test_data.columns))
+	model = build_model(vocab_size)
 
+	model.fit({'question_title_input': np.array(X_train['question_title_tokenized_padded'].tolist()),
+				'question_body_input': np.array(X_train['question_body_tokenized_padded'].tolist()),
+				'answer_input': np.array(X_train['answer_tokenized_padded'].tolist())},
+				{'outputs': np.array(y_train.as_matrix())}, batch_size=32, epochs=25, validation_split=0.2)
+	model.save('main_model.model')
 
+	model.evaluate({'question_title_input': X_test['question_title_tokenized_padded'],
+					'question_body_input': X_test['question_body_tokenized_padded'],
+					'answer_input': X_test['answer_tokenized_padded']},
+					{'outputs': y_test})
 
 
 
