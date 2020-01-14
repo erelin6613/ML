@@ -5,8 +5,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from keras.preprocessing.text import Tokenizer
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout, Embedding
-from keras.layers import Flatten, SimpleRNN, Reshape, Input, concatenate
+from keras.layers import Dense, LSTM, Dropout, Embedding, Input
+from keras.layers import Flatten, SimpleRNN, Reshape, concatenate
+from keras.layers import BatchNormalization, ConvLSTM2D, RNN, SimpleRNNCell
 #import gensim.downloader as api
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
@@ -14,10 +15,14 @@ import numpy as np
 from keras.models import Model
 from keras.models import load_model
 from keras import regularizers
+#import talos
+#from talos.model.normalizers import lr_normalizer
 #import time
 
 #train_data = pd.read_csv('train.csv', encoding='utf-8')
 #final_test_data = pd.read_csv('test.csv', encoding='utf-8')
+
+
 
 def cat_to_numeric(category):
     if category=='LIFE_ARTS':
@@ -59,20 +64,29 @@ def transform_texts(frame):
         frame.drop([col], inplace=True, axis=1)
     return [frame, tokenizer]
 
-def pad_texts(frame, cols, maxlen=1000):
+def pad_texts(frame, cols, maxlen=500, expand=True):
     
     frame_padded = pd.DataFrame()
-    for index in frame.index:
-        padded_val = {'index': index}
-        for col in cols:
-            if len(frame.loc[index, col]) < maxlen:
-                elem = frame.loc[index, col]
-                while len(elem) < maxlen:
-                    elem.append(0)
-            else:
-                elem = frame.loc[index, col][0:maxlen]
-            padded_val[col+'_padded'] = elem
-        frame_padded = frame_padded.append(padded_val, ignore_index=True)
+    if expand:
+    	for index in frame.index:
+        	padded_val = {'index': index}
+        	for col in cols:
+        		if len(frame.loc[index, col]) < maxlen:
+        			elem = frame.loc[index, col]
+        			while len(elem) < maxlen:
+        				elem.append(0)
+        		else:
+        			elem = frame.loc[index, col][0:maxlen]
+        		padded_val[col+'_padded'] = elem
+        	frame_padded = frame_padded.append(padded_val, ignore_index=True)
+    else:
+    	for index in frame.index:
+    		padded_val = {'index': index}
+    		for col in cols:
+    			elem = frame.loc[index, col]
+    			padded_val[col+'_padded'] = elem
+    		frame_padded = frame_padded.append(padded_val, ignore_index=True)    
+
     return frame_padded
 
 def convert_to_arrays(frame):
@@ -80,13 +94,17 @@ def convert_to_arrays(frame):
     arrays = []
     for index in frame.index:
         merged = []
-        for each in ['question_title_tokenized_padded', 'question_body_tokenized_padded', 'answer_tokenized_padded']:
-            arr = np.array(frame.loc[index, each])
-            #print(arr)
-            merged.append(arr)
-            #print(merged)
-        arrays.append(np.array(merged))
-    #print(np.array(X_train_new).shape)
+        try:
+        	for each in ['question_title_tokenized_padded', 'question_body_tokenized_padded', 'answer_tokenized_padded']:
+        		arr = np.array(frame.loc[index, each])
+        		merged.append(arr)
+        	arrays.append(np.array(merged))
+        except Exception:
+         	for each in ['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized']:
+         		arr = np.array(frame.loc[index, each])
+         		merged.append(arr)
+         	arrays.append(np.array(merged))
+
     return np.array(arrays)
 """
 
@@ -118,13 +136,15 @@ def build_model(tokenizer, maxlen=750):
     return model
 """
 
-def build_model_2(tokenizer, maxlen=1000):
+def build_model_2(tokenizer, maxlen=500):
     input_qt = Input(shape=(3, maxlen))
-    #emb_qt = Embedding(len(tokenizer.word_index)+1, output_dim=256)(input_qt)
+    norm_qt = BatchNormalization()(input_qt)
+    emb_qt = Embedding(len(tokenizer.word_index)+1, output_dim=5)(input_qt)
     #flatten = Flatten()(emb_qt)   bias_regularizer=
-    lstm_qt1 = LSTM(1024, return_sequences=True, dropout=0.2, activation='sigmoid')(input_qt)
-    lstm_qt2 = LSTM(512, return_sequences=True, dropout=0.1, activation='sigmoid')(lstm_qt1)
-    lstm_qt3 = LSTM(512, activation='sigmoid')(lstm_qt2)
+    lstm_qt1 = RNN(SimpleRNNCell(1024, dropout=0.2, activation='sigmoid'), return_sequences=True)(norm_qt)
+    lstm_qt2 = RNN(SimpleRNNCell(512, dropout=0.2, activation='sigmoid'), return_sequences=True)(lstm_qt1)
+    norm_qt = BatchNormalization()(lstm_qt2)
+    lstm_qt3 = RNN(SimpleRNNCell(512, activation='sigmoid'))(norm_qt)
     
     dense = Dense(512, activation='relu')(lstm_qt3)
     dropout = Dropout(0.2)(dense)
@@ -136,15 +156,46 @@ def build_model_2(tokenizer, maxlen=1000):
     
     return model
 
-def predict_and_write(model, test_data):
-    pass
+def model_3(tokenizer, maxlen=500):
+
+    input_qt = Input(shape=(3, maxlen))
+    #emb_qt = Embedding(len(tokenizer.word_index)+1)(input_qt)
+    norm_qt = BatchNormalization()(input_qt)
+
+    lstm_qt1 = LSTM(1024, return_sequences=True, recurrent_dropout=0.15, activation='sigmoid')(norm_qt)
+    lstm_qt2 = LSTM(512, return_sequences=True, recurrent_dropout=0.1, activation='sigmoid')(lstm_qt1)
+    norm_qt = BatchNormalization()(lstm_qt2)
+    lstm_qt3 = LSTM(512, activation='sigmoid')(norm_qt)
     
-    #predictions = model.predict(test_data)
+    dense = Dense(512, activation='relu')(lstm_qt3)
+    dropout = Dropout(0.2)(dense)
+    dense2 = Dense(256, activation='relu')(dropout)
+    output = Dense(30, name='outputs')(dense2)
+    
+    model = Model(inputs=[input_qt], outputs=[output])
+    model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
+    
+    return model
+
+
 
 
 def main():
-    train_data = pd.read_csv('../input/google-quest-challenge/train.csv', encoding='utf-8')
-    test_data = pd.read_csv('../input/google-quest-challenge/test.csv', encoding='utf-8')
+    #train_data = pd.read_csv('../input/google-quest-challenge/train.csv', encoding='utf-8')
+    #test_data = pd.read_csv('../input/google-quest-challenge/test.csv', encoding='utf-8')
+    train_data = pd.read_csv('train.csv', encoding='utf-8')
+    test_data = pd.read_csv('test.csv', encoding='utf-8')
+
+    params = {'recurrent_dropout': [0.1, 0.15, 0.20],
+			'dropout': [0.1, 0.15, 0.20],
+			'activation': ['tanh', 'sigmoid', None, 'hard_sigmoid'],
+			'lr': [0.5, 5, 10],
+			'batch_size': [4, 16, 32],
+			'epochs': [100, 500, 750],
+			'optimizer': ['Adam', 'Nadam', 'RMSprop'],
+			'validation_split': [0.15, 0.2, 0.25]
+		}
+
     train_data = prepare_data(train_data)
     test_data = prepare_data(test_data)
     
@@ -153,33 +204,42 @@ def main():
     X_train, tokenizer = transform_texts(X_train)
     X_test, _ = transform_texts(X_test)
     
-    X_train = pad_texts(X_train, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'])
-    X_test = pad_texts(X_test, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'])
-    #print(y_train.columns)
-    #print(len(test_data.columns))
+    X_train = pad_texts(X_train, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'], expand=True)
+    X_test = pad_texts(X_test, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'], expand=True)
+
     X_train = convert_to_arrays(X_train)
     X_test = convert_to_arrays(X_test)
-    model = build_model_2(tokenizer)
-    model.fit(X_train, y_train, batch_size=16, epochs=100, validation_split=0.2)
 
-    #model.fit({'question_title_input': np.array(X_train['question_title_tokenized_padded'].tolist()),
-    #           'question_body_input': np.array(X_train['question_body_tokenized_padded'].tolist()),
-    #           'answer_input': np.array(X_train['answer_tokenized_padded'].tolist())},
-    #          {'outputs': np.array(y_train.as_matrix())}, batch_size=16, epochs=1, validation_split=0.2)
-    model.save('main_model.model')
+    #talos.Scan(X_train, y_train, model=model_3, params=params, experiment_name='talos_stats', functional_model=True)
+
+    model = build_model_2(tokenizer)
+    model.fit(X_train, y_train, batch_size=16, epochs=10, validation_split=0.2)
+
+    model.save('model_conv_lstm.model')
     
     print(model.evaluate(X_test, y_test))
     
-    #print(test_data.columns)
     test_data, _ = transform_texts(test_data.drop(['qa_id', 'categoty_normalized'], axis=1))
     test_data = pad_texts(test_data, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'])
     test_data = convert_to_arrays(test_data)
-    #with open('predictions.txt', 'w') as file: 
-    #    file.write(model.predict(test_data))
-    #    print(type(model.predict(test_data)))
-    print(test_data)
+    predictions = model.predict(test_data)
+        
+    #submission_data = pd.read_csv('../input/google-quest-challenge/sample_submission.csv', encoding='utf-8')
+    submission_data = pd.read_csv('sample_submission.csv', encoding='utf-8')
+    print(submission_data)
+    submissions = pd.DataFrame()
+    print(len(submission_data.columns))
+    print(submission_data.columns)
+    row = 0
+    for each in submission_data['qa_id']:
+        col = 0
+        submissions.loc[each, 'qa_id'] = str(each)
+        for column in submission_data.drop(['qa_id'], axis=1):
+            submissions.loc[each, column] = predictions[row, col]
+            col+=1
+        row+=1
 
 
+    submissions.to_csv('submission.csv')
 
 main()
-
