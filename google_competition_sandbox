@@ -14,6 +14,7 @@ from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
 import numpy as np
 from keras.models import Model
+from keras.initializers import RandomNormal
 from keras.models import load_model
 from keras import regularizers
 from keras.initializers import RandomUniform
@@ -132,26 +133,28 @@ def model_4(tokenizer, maxlen=750):
     return model
 
 def model_5_rnn(tokenizer, maxlen=200):
+    
+    initializer = RandomUniform(seed=66)
 
     input_qt = Input(shape=(maxlen, ))
     emb_qt = Embedding(len(tokenizer.word_index)+1, output_dim=1024)(input_qt)
     #reshape_qt = Reshape((1, maxlen))(emb_qt)
-    lstm_qt = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid'), return_sequences=True)(emb_qt)
-    lstm_qt2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid'))(lstm_qt)
+    lstm_qt = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer), return_sequences=True)(emb_qt)
+    lstm_qt2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer))(lstm_qt)
     dense_qt = Dense(128, activation='relu')(lstm_qt2)
 
     input_qb = Input(shape=(maxlen, ))
     emb_qb = Embedding(len(tokenizer.word_index)+1, output_dim=1024)(input_qb)
     #reshape_qb = Reshape((1, maxlen))(emb_qb)
-    lstm_qb = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid'), return_sequences=True)(emb_qb)
-    lstm_qb2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid'))(lstm_qb)
+    lstm_qb = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer), return_sequences=True)(emb_qb)
+    lstm_qb2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer))(lstm_qb)
     dense_qb = Dense(128, activation='relu')(lstm_qb2)
 
     input_ans = Input(shape=(maxlen, ))
     emb_ans = Embedding(len(tokenizer.word_index)+1, output_dim=1024)(input_ans)
     #reshape_ans = Reshape((1, maxlen))(emb_ans)
-    lstm_ans = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid'), return_sequences=True)(emb_ans)
-    lstm_ans2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid'))(lstm_ans)
+    lstm_ans = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer), return_sequences=True)(emb_ans)
+    lstm_ans2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer))(lstm_ans)
     dense_ans = Dense(128, activation='relu')(lstm_ans2)
 
     merged_dense = Add()([dense_qt, dense_qb, dense_ans])
@@ -169,7 +172,7 @@ def model_5_rnn(tokenizer, maxlen=200):
 
 
 
-def experiments():
+def main():
     train_data = pd.read_csv('../input/google-quest-challenge/train.csv', encoding='utf-8')
     test_data = pd.read_csv('../input/google-quest-challenge/test.csv', encoding='utf-8')
 
@@ -200,7 +203,7 @@ def experiments():
     #predictions = model.predict(test_data)
     
 
-    model.fit([X_train_qt, X_train_qb, X_train_ans], y_train.as_matrix(), batch_size=32, epochs=1, validation_split=0.2)
+    model.fit([X_train_qt, X_train_qb, X_train_ans], y_train.as_matrix(), batch_size=32, epochs=10, validation_split=0.2)
 
     #model.save('model_multiple_inp_out_lstm.model')
     
@@ -217,34 +220,36 @@ def experiments():
 
         
     submission_data = pd.read_csv('../input/google-quest-challenge/sample_submission.csv', encoding='utf-8')
+
+    print(submission_data)
+
     submissions = pd.DataFrame()
+    print(len(submission_data.columns))
+    print(submission_data.columns)
     
     row = 0
     for each in submission_data['qa_id']:
         col = 0
         submissions.loc[each, 'qa_id'] = str(each)
-        #for column in submission_data.drop(['qa_id'], axis=1):
-        for column in target_cols:
-            try:
-                if round(abs(predictions[row, col]), 5) < 0.0001:
-                    submissions.loc[each, column] = 0
-                else:
-                    submissions.loc[each, column] = round(abs(predictions[row, col]), 5)
-            except Exception:
-                submissions.loc[each, column] = 0.5
+        for column in submission_data.drop(['qa_id'], axis=1):
+        #for column in target_cols:
+            if round(abs(predictions[row, col]), 5) < 0.001:
+                submissions.loc[each, column] = float(0)
+            else:
+                submissions.loc[each, column] = round(abs(predictions[row, col]), 5)
             col+=1
         row+=1
 
     submissions['qa_id'] = submissions['qa_id'].astype(object)
-    #submissions.to_csv('submission.csv', index=False)
-    #pred_df = pd.read_csv("../input/googlesubmission/submission.csv")
     
-    print(submissions.head())
+    # Thanks JIANJIAN for sharing https://www.kaggle.com/buaazijian/csv-of-qa/notebook?scriptVersionId=26651714
     
+    pred_df = submissions
+
     sample_csv = "../input/google-quest-challenge/sample_submission.csv"
     sample_df = pd.read_csv(sample_csv)
     n=0
-    for line in tqdm(submissions.values):
+    for line in tqdm(pred_df.values):
         for i in range(len(sample_df)):
             if(sample_df.loc[i]['qa_id']==int(line[0])):
                 for j in range(1,31):
@@ -254,7 +259,9 @@ def experiments():
     sample_df.to_csv("submission.csv", index=False)
     print("done!")
     print(sample_df.head())
-
     
-experiments()
+    
+    
+
+main()
 print((time.time() - start_time)/60, ' minutes')
