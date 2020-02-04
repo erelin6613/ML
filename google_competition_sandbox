@@ -2,32 +2,46 @@ import os
 import json
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 from keras.preprocessing.text import Tokenizer
-from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout, Embedding, Input
-from keras.layers import Flatten, SimpleRNN, Reshape, concatenate, GRU
-from keras.layers import BatchNormalization, ConvLSTM2D, RNN, MaxPooling1D
-from keras.layers import Conv1D, Bidirectional, SimpleRNNCell, Add
-from keras import regularizers
-#import gensim.downloader as api
+from keras.models import Sequential, load_model,Model
+from keras.layers import Dense, LSTM, Dropout, Embedding, Input, Bidirectional
+from keras.layers import SimpleRNNCell, Concatenate, Add, RNN, BatchNormalization
 from keras.preprocessing.sequence import pad_sequences
-from keras.utils import to_categorical
 import numpy as np
-from keras.models import Model
-from keras.models import load_model
-from keras.optimizers import RMSprop
+from scipy.stats import spearmanr
+from keras.initializers import RandomNormal, RandomUniform
 from keras import regularizers
-from keras.initializers import RandomUniform
-from sklearn.preprocessing import LabelEncoder
 import time
+from pathlib import Path
+from tqdm import tqdm
 
-start_time = time.time()
-#import talos
-#from talos.model.normalizers import lr_normalizer
-#import time
-
-#train_data = pd.read_csv('train.csv', encoding='utf-8')
-#final_test_data = pd.read_csv('test.csv', encoding='utf-8')
+def clean_texts(text):
+    
+    puncts = '.,?/\\!-:+#@()*%$\'"'
+    
+    stopwords = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you',
+                 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 
+                 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself',
+                 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which',
+                 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 
+                 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+                 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and',
+                 'or', 'as', 'while', 'of', 'at', 'by', 'for', 'with', 'about',
+                 'into', 'through', 'above', 'to', 'from', 'up', 'in', 'out',
+                 'on', 'off', 'under', 'again', 'further', 'then', 'once', 'here',
+                 'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both',
+                 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'only',
+                 'own', 'so', 'than', 'too', 'very', 'will', 'just', 'should']
+    
+    for word in stopwords:
+        if word in text:
+            text = text.replace(word, '')
+    for punct in puncts:
+        if punct in text:
+            text = text.replace(punct, '')
+    
+    return text
 
 
 
@@ -39,25 +53,21 @@ def cat_to_numeric(category):
     if category=='SCIENCE':
         return 3
     if category=='STACKOVERFLOW':
-      return 4
+        return 4
     if category=='TECHNOLOGY':
-      return 5
-
-def sequence_cats(frame, cols, tokenizer):
-    for col in cols:
-        frame.loc[:, col] = [x[0] for x in tokenizer.texts_to_sequences(frame[col])]
-
-    return frame
+        return 5
 
 def prepare_data(frame):
-    #to_drop = ['question_user_page', 'host', 'url', 'answer_user_page', 
-    #           'answer_user_name', 'question_user_name', 'question_user_page']
+    
+    to_drop = []
+    for col in frame.columns:
+        if 'user_page' in col or 'host' in col or\
+        'url' in col or 'user_name' in col or 'categ' in col:
+            to_drop.append(col)
 
-    to_drop = ['question_user_page', 'url', 'answer_user_page', 'question_user_name', 'answer_user_name']
     data = frame.drop(to_drop, axis=1)
-    #data['categoty_normalized'] = data['category'].apply(cat_to_numeric)
-    #data.drop('category', axis=1, inplace=True)
     return data
+
 
 def get_vars_and_targets(train_data, test_data):
     
@@ -68,362 +78,125 @@ def get_vars_and_targets(train_data, test_data):
     train_cols = list(train_cols)
     return train_cols, target_cols
 
-def transform_texts(frame, cols, tokenizer=None, test=False):
+def get_text_cols(frame):
     
-    #text_cols = ['question_title', 'question_body', 'answer']
-    #text_cols = get_text_cols(frame)
+    text_cols = []
+    for col in frame.columns:
+        if 'title' in col or 'body' in col or col=='answer':
+            text_cols.append(col)
+            
+    return text_cols
+
+
+def transform_texts(frame, tokenizer=None, test=False):
+    
+    text_cols = get_text_cols(frame)
+    for ind in frame.index:
+        for col in text_cols:
+            frame.loc[ind, col] = clean_texts(str(frame.loc[ind, col]))
     if test==False:
         tokenizer = Tokenizer(oov_token='OOV')
-        for col in cols:
+        for col in text_cols:
             tokenizer.fit_on_texts(frame[col])
     else:
         tokenizer=tokenizer
     renamed_cols = []
-    for col in cols:
+    for col in text_cols:
         renamed_cols.append(col+'_tokenized')
         frame[col+'_tokenized'] = tokenizer.texts_to_sequences(frame[col])
         frame.drop([col], inplace=True, axis=1)
     return [frame, renamed_cols, tokenizer]
 
-def pad_texts(frame, cols, maxlen=500, expand=True):
+
+def model_6_lstm(X_train_padded, tokenizer, maxlen=750):
     
-    frame_padded = pd.DataFrame()
-    if expand:
-    	for index in frame.index:
-        	padded_val = {'index': index}
-        	for col in cols:
-        		if len(frame.loc[index, col]) < maxlen:
-        			elem = frame.loc[index, col]
-        			while len(elem) < maxlen:
-        				elem.append(0)
-        		else:
-        			elem = frame.loc[index, col][0:maxlen]
-        		padded_val[col+'_padded'] = elem
-        	frame_padded = frame_padded.append(padded_val, ignore_index=True)
-    else:
-    	for index in frame.index:
-        	padded_val = {'index': index}
-        	for col in cols:
-        		if len(frame.loc[index, col]) < maxlen:
-        			elem = frame.loc[index, col]
-        			#while len(elem) < maxlen:
-        			#	elem.append(0)
-        		else:
-        			elem = frame.loc[index, col][0:maxlen]
-        		padded_val[col+'_padded'] = elem
-        	frame_padded = frame_padded.append(padded_val, ignore_index=True)
-
-    return frame_padded
-
-def convert_to_arrays(frame):
+    initializer = RandomUniform(seed=69)
+    #j = 0
+    embs = []
+    inputs = []
+    for each in X_train_padded:
+        input_layer = Input(shape=(maxlen, ))
+        emb_layer = Embedding(len(tokenizer.word_index)+1, output_dim=128)(input_layer)
+        embs.append(emb_layer)
+        inputs.append(input_layer)
+    concat = Concatenate(axis=1)(embs)
+    lstm_layer_1 = LSTM(256, return_sequences=True, dropout=0.2)(concat)
+    lstm_layer_2 = LSTM(256, dropout=0.1)(lstm_layer_1)
+    norm_layer = BatchNormalization()(lstm_layer_2)
+    dense_layer = Dense(256, activation='relu')(norm_layer)
     
-    arrays = []
-    for index in frame.index:
-        merged = []
-        try:
-        	for each in ['question_title_tokenized_padded', 'question_body_tokenized_padded', 'answer_tokenized_padded']:
-        		arr = np.array(frame.loc[index, each])
-        		merged.append(arr)
-        	arrays.append(np.array(merged))
-        except Exception:
-         	for each in ['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized']:
-         		arr = np.array(frame.loc[index, each])
-         		merged.append(arr)
-         	arrays.append(np.array(merged))
-
-    return np.array(arrays)
-
-def model_4(tokenizer, maxlen=750):
-
-    input_qt = Input(shape=(1, maxlen))
-    emb_qt = Embedding(len(tokenizer.word_index)+1, output_dim=3)(input_qt)
-    reshape_qt = Reshape((1, maxlen))(emb_qt)
-    lstm_qt = RNN(SimpleRNNCell(1024, recurrent_dropout=0.1, activation='sigmoid', 
-        recurrent_regularizer=regularizers.l1(0.01)), return_sequences=True)(reshape_qt)
-    lstm_qt2 = RNN(SimpleRNNCell(512, activation='sigmoid', recurrent_regularizer=regularizers.l1(0.01)))(lstm_qt)
-    dense_qt = Dense(256, activation='relu')(lstm_qt2)
-
-    input_qb = Input(shape=(1, maxlen))
-    emb_qb = Embedding(len(tokenizer.word_index)+1, output_dim=3)(input_qb)
-    reshape_qb = Reshape((1, maxlen))(emb_qb)
-    lstm_qb = RNN(SimpleRNNCell(1024, recurrent_dropout=0.1, activation='sigmoid', 
-        recurrent_regularizer=regularizers.l1(0.01)), return_sequences=True)(reshape_qb)
-    lstm_qb2 = RNN(SimpleRNNCell(512, activation='sigmoid', recurrent_regularizer=regularizers.l1(0.01)))(lstm_qb)
-    dense_qb = Dense(256, activation='relu')(lstm_qb2)
-
-    input_ans = Input(shape=(1, maxlen))
-    emb_ans = Embedding(len(tokenizer.word_index)+1, output_dim=3)(input_ans)
-    reshape_ans = Reshape((1, maxlen))(emb_ans)
-    lstm_ans = RNN(SimpleRNNCell(1024, recurrent_dropout=0.1, activation='sigmoid', 
-        recurrent_regularizer=regularizers.l1(0.01)), return_sequences=True)(reshape_ans)
-    lstm_ans2 = RNN(SimpleRNNCell(512, activation='sigmoid', recurrent_regularizer=regularizers.l1(0.01)))(lstm_ans)
-    dense_ans = Dense(256, activation='relu')(lstm_ans2)
-
-    merged_dense = Add()([dense_qt, dense_qb, dense_ans])
-    droput = Dropout(0.2)(merged_dense)
+    droput = Dropout(0.2)(dense_layer)
     dense_1 = Dense(128, activation='relu')(droput)
     dense_2 = Dense(64, activation='relu')(dense_1)
     output = Dense(30)(dense_2)
 
-    model = Model(inputs=[input_qt, input_qb, input_ans], outputs=[output])
-    model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
+    model = Model(inputs=inputs, outputs=[output])
+    model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
+    #print(model.summary())
 
-    return model
+    return model    
 
-def model_5_rnn(tokenizer, maxlen=200):
+def spears_score(y_test, predictions):
+    rhos = []
+    for tcol, pcol in zip(np.transpose(y_test), np.transpose(predictions)):
+        rhos.append(spearmanr(tcol, pcol).correlation)
+    return np.nanmean(rhos)
+
+
+def main():
     
-    initializer = RandomUniform(seed=69)
-
-    input_qt = Input(shape=(maxlen, ))
-    emb_qt = Embedding(len(tokenizer.word_index)+1, output_dim=1024)(input_qt)
-    #reshape_qt = Reshape((1, maxlen))(emb_qt)
-    lstm_qt = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer), return_sequences=True)(emb_qt)
-    lstm_qt2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer))(lstm_qt)
-    dense_qt = Dense(128, activation='relu')(lstm_qt2)
-
-    input_qb = Input(shape=(maxlen, ))
-    emb_qb = Embedding(len(tokenizer.word_index)+1, output_dim=1024)(input_qb)
-    #reshape_qb = Reshape((1, maxlen))(emb_qb)
-    lstm_qb = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer), return_sequences=True)(emb_qb)
-    lstm_qb2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer))(lstm_qb)
-    dense_qb = Dense(128, activation='relu')(lstm_qb2)
-
-    input_ans = Input(shape=(maxlen, ))
-    emb_ans = Embedding(len(tokenizer.word_index)+1, output_dim=1024)(input_ans)
-    #reshape_ans = Reshape((1, maxlen))(emb_ans)
-    lstm_ans = RNN(SimpleRNNCell(512, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer), return_sequences=True)(emb_ans)
-    lstm_ans2 = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid', bias_initializer=initializer))(lstm_ans)
-    dense_ans = Dense(128, activation='relu')(lstm_ans2)
-
-    merged_dense = Add()([dense_qt, dense_qb, dense_ans])
-    droput = Dropout(0.2)(merged_dense)
-    dense_1 = Dense(64, activation='relu')(droput)
-    dense_2 = Dense(32, activation='relu')(dense_1)
-    output = Dense(30)(dense_2)
-
-    model = Model(inputs=[input_qt, input_qb, input_ans], outputs=[output])
-    model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
-
-    return model
-
-def model_6(tokenizer, maxlen_qt, maxlen_qb, maxlen_ans):
-
-    input_qt = Input(shape=(maxlen_qt, ), batch_shape=(1, maxlen_qt))
-    emb_qt = Embedding(len(tokenizer.word_index)+1, output_dim=256)(input_qt)
-    lstm_qt = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid'), return_sequences=True)(emb_qt)
-    lstm_qt2 = RNN(SimpleRNNCell(256, activation='sigmoid'))(lstm_qt)
-    dense_qt = Dense(128, activation='relu')(lstm_qt2)
-
-    input_qb = Input(shape=(maxlen_qb, ), batch_shape=(1, maxlen_qb))
-    emb_qb = Embedding(len(tokenizer.word_index)+1, output_dim=256)(input_qb)
-    #reshape_qb = Reshape((1, maxlen))(emb_qb)
-    lstm_qb = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid'), return_sequences=True)(emb_qb)
-    lstm_qb2 = RNN(SimpleRNNCell(256, activation='sigmoid'))(lstm_qb)
-    dense_qb = Dense(128, activation='relu')(lstm_qb2)
-
-    input_ans = Input(shape=(maxlen_ans, ), batch_shape=(1, maxlen_ans))
-    emb_ans = Embedding(len(tokenizer.word_index)+1, output_dim=256)(input_ans)
-    #reshape_ans = Reshape((1, maxlen))(emb_ans)
-    lstm_ans = RNN(SimpleRNNCell(256, recurrent_dropout=0.1, activation='sigmoid'), return_sequences=True)(emb_ans)
-    lstm_ans2 = RNN(SimpleRNNCell(256, activation='sigmoid'))(lstm_ans)
-    dense_ans = Dense(128, activation='relu')(lstm_ans2)
-
-    input_nums = Input(shape=(5, ))
-    dense_nums = Dense(256, activation='relu')(input_nums)
-    droput_nums = Dropout(0.2)(dense_nums)
-    dense_nums_2 = Dense(128, activation='relu')(droput_nums)
-
-    merged_dense = Add()([dense_qt, dense_qb, dense_ans, dense_nums_2])
-    droput = Dropout(0.15)(merged_dense)
-    dense_1 = Dense(64, activation='relu')(droput)
-    dense_2 = Dense(32, activation='relu')(dense_1)
-    output = Dense(30)(dense_2)
-
-    model = Model(inputs=[input_qt, input_qb, input_ans, input_nums], outputs=[output])
-    model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
-
-    return model
-
-def add_lengths(frame, col):
-    frame.loc[:, col+'_len'] = [len(str(x)) for x in frame[col]]
-    #frame.drop(col, axis=1)
-    return frame
-
-def get_cat_from_host(frame):
-    frame.loc[:, 'cat_from_host'] = [x.split('.')[0] for x in frame['host']]
-    frame.drop('host', axis=1)
-    return frame
-
-def encode_cats(frame, cols, tokenizer):
-
-    for col in cols:
-        enc = LabelEncoder()
-        enc.fit(frame[col])
-        frame[col] = enc.transform(frame[col])
-        #frame[col] = to_categorical(frame[col], num_classes=len(enc.classes_))  # maybe drop later?
-
-    return frame
-
-
-
-
-def experiments():
-    train_data = pd.read_csv('train.csv', encoding='utf-8')
-    test_data = pd.read_csv('test.csv', encoding='utf-8')
-
+    train_data = pd.read_csv('../input/google-quest-challenge/train.csv')
+    test_data = pd.read_csv('../input/google-quest-challenge/test.csv')
     train_data = prepare_data(train_data)
     test_data = prepare_data(test_data)
+    train_cols, _ = get_vars_and_targets(train_data, test_data)
+    submission_data = pd.read_csv('../input/google-quest-challenge/sample_submission.csv', encoding='utf-8')
+    target_cols = list(submission_data.columns[1:].values)
     
-    train_cols, target_cols = get_vars_and_targets(train_data, test_data)
-    for col in train_cols:
-        train_data = add_lengths(train_data, col)
-
-    print(train_data.columns)
-
-
-
-
-
-
-
-
-
     X_train, X_test, y_train, y_test = train_test_split(train_data.loc[:, train_cols], train_data.loc[:, target_cols], test_size=0.25)
-    X_train, tokenizer = transform_texts(X_train)
-    X_test, _ = transform_texts(X_test)
+    X_train, text_cols, tokenizer = transform_texts(X_train.drop('qa_id', axis=1), test=False)
+    X_test, text_cols, _ = transform_texts(X_test.drop('qa_id', axis=1), tokenizer, test=True)
+    print(X_train.columns, X_test.columns)
+    #scaler = MinMaxScaler()
+    #scaler.fit(y_train.values)
+    #y_train, y_test = scaler.transform(y_train), scaler.transform(y_test.values)
+    X_train_features = []
+    X_test_features = []
+    for col in text_cols:
+        X_train_features.append('X_train_'+(('_').join(col.split('_')[:-1])))
+        X_test_features.append('X_test_'+(('_').join(col.split('_')[:-1])))
+    X_train_padded = []
+    X_test_padded = []
+    i = 0
+    for each in X_train_features:
+        X_train_padded.append(pad_sequences(X_train[text_cols[i]], maxlen=750, padding='pre'))
+        X_test_padded.append(pad_sequences(X_test[text_cols[i]], maxlen=750, padding='pre'))
+        i += 1
+    model = model_6_lstm(X_train_padded, tokenizer)
+    model.fit(X_train_padded, y_train.values, batch_size=16, epochs=5, validation_split=0.2)
+    print(model.evaluate(X_test_padded, y_test.values))
+    print('Spearmen score:', spears_score(y_test.values, model.predict(X_test_padded)))
 
-
-
-    X_train_qt = pad_sequences(X_train['question_title_tokenized'], maxlen=200, dtype='int32', padding='pre')
-    X_train_qb = pad_sequences(X_train['question_body_tokenized'], maxlen=200, dtype='int32', padding='pre')
-    X_train_ans = pad_sequences(X_train['answer_tokenized'], maxlen=200, dtype='int32', padding='pre')
-    X_test_qt = pad_sequences(X_train['question_title_tokenized'], maxlen=200, dtype='int32', padding='pre')
-    X_test_qb = pad_sequences(X_train['question_body_tokenized'], maxlen=200, dtype='int32', padding='pre')
-    X_test_ans = pad_sequences(X_train['answer_tokenized'], maxlen=200, dtype='int32', padding='pre')
-    #X_train = pad_texts(X_train, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'], expand=True)
-    #X_test = pad_texts(X_test, cols=['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized'], expand=True)
-    print(np.array([[y] for y in y_train.as_matrix()]))
-    #print(X_train['question_title_tokenized'].str.len().mean()) # 9.218
-    #print(X_train['question_body_tokenized'].str.len().mean()) # 138.459
-    #print(X_train['answer_tokenized'].str.len().mean()) # 143.221
-
-    model = model_5_rnn(tokenizer)
-    
-    print(y_train.as_matrix().shape)
-    print(y_train.values.shape)
-    exit()
-    model.fit([X_train_qt, X_test_qb, X_train_ans], y_train.as_matrix(), batch_size=16, epochs=10, validation_split=0.2)
-
-    model.save('model_multiple_inp_out_lstm.model')
-    
-    print(model.evaluate(X_test, y_test))
-    
-    test_data, _ = transform_texts(test_data.drop(['qa_id', 'categoty_normalized'], axis=1))
-    test_data = convert_to_arrays(test_data)
-    predictions = model.predict(test_data)
+    test_data, text_cols, _ = transform_texts(test_data.drop(['qa_id'], axis=1), tokenizer=tokenizer, test=True)
+    test_features = []
+    for col in text_cols:
+        test_features.append(col)
+        test_padded = []
+    j = 0
+    for each in test_features:
+        test_padded.append(pad_sequences(test_data[each], maxlen=750, padding='pre'))
+        j += 1
         
-    #submission_data = pd.read_csv('../input/google-quest-challenge/sample_submission.csv', encoding='utf-8')
-    submission_data = pd.read_csv('sample_submission.csv', encoding='utf-8')
-    print(submission_data)
-    submissions = pd.DataFrame()
-    print(len(submission_data.columns))
-    print(submission_data.columns)
-    row = 0
-    for each in submission_data['qa_id']:
-        col = 0
-        submissions.loc[each, 'qa_id'] = str(each)
-        for column in submission_data.drop(['qa_id'], axis=1):
-            submissions.loc[each, column] = predictions[row, col]
-            col+=1
-        row+=1
-
-
-    submissions.to_csv('submission.csv')
-
-
-def explore():
-    train_data = pd.read_csv('train.csv', encoding='utf-8')
-    test_data = pd.read_csv('test.csv', encoding='utf-8')
-
-
-    train_data = prepare_data(train_data)
-    test_data = prepare_data(test_data)
-    
-    train_cols, target_cols = get_vars_and_targets(train_data, test_data)
-
-    train_targets = train_data.loc[:, target_cols]
-    #print(train_targets)
-    #test_targets = train_data.loc[:, target_cols]
-
-    for col in ['question_title', 'question_body', 'answer']:
-        if col == 'qa_id' or 'category' in col \
-        or 'host' in col:
-            continue
-        train_data = add_lengths(train_data, col)
-        test_data = add_lengths(test_data, col)
-
-    train_data = get_cat_from_host(train_data)
-    test_data = get_cat_from_host(test_data)
-
-    train_data, _, tokenizer = transform_texts(train_data, cols=['question_title', 'question_body', 'answer'])  
-    test_data, _, _ = transform_texts(test_data, tokenizer=tokenizer, cols=['question_title', 'question_body', 'answer'], test=True)
-
-    #print(train_data)
-
-    train_data = encode_cats(train_data, ['cat_from_host', 'category'], tokenizer)
-    test_data = encode_cats(test_data, ['cat_from_host', 'category'], tokenizer)
-
-    #print(test_data.describe())
-
-    #train_data.drop('qa_id', axis=1).corr().to_csv('corr.csv')
-
-    maxlen_qt = 50
-    maxlen_qb = 250
-    maxlen_ans = 250
-
-    train_data_qt = pad_sequences(train_data['question_title_tokenized'], maxlen=maxlen_qt, padding='pre')
-    train_data_qb = pad_sequences(train_data['question_body_tokenized'], maxlen=maxlen_qb, padding='pre')
-    train_data_ans = pad_sequences(train_data['answer_tokenized'], maxlen=maxlen_qb, padding='pre')
-
-    test_data_qt = pad_sequences(test_data['question_title_tokenized'], maxlen=maxlen_qt, padding='pre')
-    test_data_qb = pad_sequences(test_data['question_body_tokenized'], maxlen=maxlen_qb, padding='pre')
-    test_data_ans = pad_sequences(test_data['answer_tokenized'], maxlen=maxlen_qb, padding='pre')
-
-    #train_data_num = train_data.drop(['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized', 'qa_id', 'host'], axis=1)
-    test_data_num = test_data.drop(['question_title_tokenized', 'question_body_tokenized', 'answer_tokenized', 'qa_id', 'host'], axis=1)
-    train_data_num = train_data.loc[:, test_data_num.columns]
-
-    print(train_data_num.shape)
-
-    model = model_6(tokenizer, maxlen_qt, maxlen_qb, maxlen_ans)
-
-    model.fit([train_data_qt, train_data_qb, train_data_ans, train_data_num.values], train_targets.values, batch_size=1, epochs=1, validation_split=0.2)
-
-    model.save('model_multiple_inp_out_lstm.model')
-
-    predictions = model.predict([test_data_qt, test_data_qb, test_data_ans, test_data_num.values])
+    predictions = model.predict(test_padded)
+    print(predictions)
+    prediction = np.clip(predictions, 0, 0.99)
         
-    #submission_data = pd.read_csv('../input/google-quest-challenge/sample_submission.csv', encoding='utf-8')
-    submission_data = pd.read_csv('sample_submission.csv', encoding='utf-8')
-    print(submission_data)
-    submissions = pd.DataFrame()
-    print(len(submission_data.columns))
-    print(submission_data.columns)
-    row = 0
-    for each in submission_data['qa_id']:
-        col = 0
-        submissions.loc[each, 'qa_id'] = str(each)
-        for column in submission_data.drop(['qa_id'], axis=1):
-            submissions.loc[each, column] = predictions[row, col]
-            col+=1
-        row+=1
+    submission_data[target_cols] = np.absolute(predictions)
 
+    print(submission_data.head())
+    submission_data.to_csv('submission.csv', index=False)
+    
+    
 
-    submissions.to_csv('submission.csv')
-
-
-
-explore()
-
-#main()
-#experiments()
+    
+main()
