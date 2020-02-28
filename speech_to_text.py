@@ -6,8 +6,6 @@ with sr.Microphone() as source:
     print("Say something!")
     audio = r.record(source, duration=10)
 
-
-WIT_AI_KEY = "RTGDXRZFO5OPVJRNSRB5BSDABGCFESDW"
 try:
 	with open('wit_token.txt', 'r') as file:
 		print("You said: \n" + r.recognize_wit(audio, key=file.read().strip()))
